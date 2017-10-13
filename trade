@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+
+import math
+import sys
+import os
+
+import plotly
+
+import plotly.plotly as py
+import plotly.graph_objs as go
+
+from plotly import tools
+
+from SerialModel import SerialModel
+
+def MobileAverage(rate, days):
+    res = 0
+    for day in range(0, days):
+        res += rate[day]
+    res /= days
+    print("MMA ", days, " = ", res)
+
+def load_graphical(serie):
+    plotly.tools.set_credentials_file(username='tetard', api_key='6WAlCTFMsT1A4wxKtuf2')
+
+    serial = go.Scatter(
+        x=[day for day in range(1, len(serie.serie) + 1)],
+        y=serie.serie,
+        name='Values'
+    )
+    TwelveDayEMA = go.Scatter(
+        x=[day for day in range(1, len(serie.TwelveDayEMA) + 1)],
+        y=serie.TwelveDayEMA,
+        name='12 days EMA'
+    )
+    TwenSixDayEMA = go.Scatter(
+        x=[day for day in range(1, len(serie.TwenSixDayEMA) + 1)],
+        y=serie.TwenSixDayEMA,
+        name='26 days EMA'
+    )
+
+    histo = go.Bar(
+        x=[day for day in range(1, len(serie.histogram) + 1)],
+        y=serie.histogram,
+        name='Histogram'
+    )
+    MACD = go.Scatter(
+        x=[day for day in range(1, len(serie.MACD) + 1)],
+        y=serie.MACD,
+        name='MACD'
+    )
+
+    signal = go.Scatter(
+        x=[day for day in range(1, len(serie.signal) + 1)],
+        y=serie.signal,
+        name='Signal'
+    )
+
+    fig = tools.make_subplots(rows=2, cols=1)
+    fig.append_trace(serial, 1, 1)
+    fig.append_trace(TwelveDayEMA, 1, 1)
+    fig.append_trace(TwenSixDayEMA, 1, 1)
+    fig.append_trace(histo, 2, 1)
+    fig.append_trace(MACD, 2, 1)
+    fig.append_trace(signal, 2, 1)
+    fig['layout'].update(
+        height=1000, width=900, title='MACD Model')
+    py.plot(fig, filename = 'basic-line')
+
+
+def take_decision(serie, infos):
+    infos['nb_days'] -= 1
+    potential_taxe = int(math.ceil(infos['capital'] * (0.15 / 100)))
+    pot_nb_actions = int((int(infos['capital'] - potential_taxe)) / int(serie.serie[-1]))
+    if (len(serie.serie) > 34 and serie.MACD[-1] > serie.signal[-1] and pot_nb_actions > 0):
+        print("buy {nb}".format(nb=pot_nb_actions))
+        invest = (serie.serie[-1] * pot_nb_actions) + potential_taxe
+        infos['capital'] = infos['capital'] - invest
+        infos['nb_actions'] += pot_nb_actions
+    elif ((serie.MACD[-1] is not None and serie.signal[-1] is not None and serie.MACD[-1] < serie.signal[-1]) or infos['nb_days'] == 0) and infos['nb_actions'] > 0:
+        print("sell {nb_actions}".format(nb_actions=infos['nb_actions']))
+        infos['capital'] += (math.ceil((infos['nb_actions'] * serie.serie[-1]) * 0.9985))
+        infos['nb_actions'] = 0
+    else:
+        print("wait")
+
+    return infos
+
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
+
+if __name__ == '__main__':
+    serie = SerialModel()
+    infos = {
+        "capital" : 100000,
+        "nb_days" : int(sys.argv[1]),
+        "nb_actions" : 0
+    }
+    while infos["nb_days"] > 1:
+        line = sys.stdin.readline()
+        if not line:
+            break
+        if line == "--end--" or line == "--end--\n" or line is None or line == "\n":
+            if infos["nb_actions"] > 0:
+                print("sell{nb_actions}".format(nb_actions=infos["nb_actions"]))
+            sys.exit(0)
+        serie.AddVal(float(line))
+        if infos["nb_days"] - 1 == 0:
+            if infos["nb_actions"] > 0:
+                print("sell{nb_actions}".format(nb_actions=infos["nb_actions"]))
+            sys.exit(0)
+        else:
+            infos = take_decision(serie, infos)
+        sys.stdout.flush()
+    load_graphical(serie)
